@@ -1,21 +1,20 @@
-// AuthContext.js
-// NOTE: Intentionally keeps API calls inline here (no api.js service layer yet)
-// TODO (refactor): extract API calls to a dedicated api/ service folder
-// TODO (refactor): add proper error boundary handling
+// context/AuthContext.js
+// Phase 2 refactor: API calls removed — auth network calls now live in api/auth.js
+// This context only manages user/token state and localStorage persistence.
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [user,    setUser]    = useState(null);
+  const [token,   setToken]   = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // On mount: restore session from localStorage
+  // Restore session from localStorage on mount
   useEffect(() => {
     const savedToken = localStorage.getItem('ct_token');
-    const savedUser = localStorage.getItem('ct_user');
+    const savedUser  = localStorage.getItem('ct_user');
     if (savedToken && savedUser) {
       setToken(savedToken);
       setUser(JSON.parse(savedUser));

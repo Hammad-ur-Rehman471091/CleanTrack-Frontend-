@@ -1,79 +1,121 @@
 // App.js
-// Main app shell — uses simple state-based routing (no react-router)
-// TODO (refactor): replace state-based navigation with react-router-dom
-// TODO (refactor): add route guards as HOC or wrapper components
-// TODO (refactor): add loading skeleton screens
+// Phase 2 refactor:
+//   - state-based routing replaced with react-router-dom v6
+//   - ProtectedRoute component enforces auth + role access
+//   - role-page rules sourced from config/permissions.js
 
-import React, { useState } from 'react';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { canAccess } from './config/permissions';
 import Navbar from './components/Navbar';
 import AuthPage from './pages/AuthPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
 import ReportIssuePage from './pages/ReportIssuePage';
 import IssuesPage from './pages/IssuesPage';
+import { Spinner } from './components/UI';
 
-// Inner app that has access to auth context
-function AppInner() {
+/**
+ * ProtectedRoute — renders children only when:
+ *   1. User is authenticated
+ *   2. User's role is allowed to access this page (via permissions config)
+ * Otherwise redirects to /auth or /dashboard accordingly.
+ */
+function ProtectedRoute({ pageKey, children }) {
   const { user, loading } = useAuth();
-  const [currentPage, setCurrentPage] = useState('dashboard');
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full w-10 h-10 border-2 border-slate-200 border-t-violet-600" />
+        <Spinner size="lg" />
       </div>
     );
   }
 
-  if (!user) {
-    return <AuthPage />;
+  if (!user) return <Navigate to="/auth" replace />;
+
+  if (pageKey && !canAccess(user.role, pageKey)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
-  // Role-page guard: redirect to dashboard if user navigates to a forbidden page
-  // TODO (refactor): centralize page access rules in a permissions config object
-  const allowedPages = {
-    manager: ['dashboard', 'projects', 'issues'],
-    tester: ['dashboard', 'report', 'issues'],
-    developer: ['dashboard', 'issues'],
-  };
+  return children;
+}
 
-  const safePage = allowedPages[user.role]?.includes(currentPage)
-    ? currentPage
-    : 'dashboard';
-
-  const renderPage = () => {
-    switch (safePage) {
-      case 'dashboard':
-        return <DashboardPage setCurrentPage={setCurrentPage} />;
-      case 'projects':
-        return <ProjectsPage />;
-      case 'report':
-        return <ReportIssuePage setCurrentPage={setCurrentPage} />;
-      case 'issues':
-        return <IssuesPage />;
-      default:
-        return <DashboardPage setCurrentPage={setCurrentPage} />;
-    }
-  };
-
+// Shared layout wrapper for authenticated pages
+function AppLayout({ children }) {
   return (
     <div className="flex min-h-screen bg-slate-50">
-      <Navbar currentPage={safePage} setCurrentPage={setCurrentPage} />
+      <Navbar />
       <main className="flex-1 p-8 overflow-y-auto">
         <div className="max-w-5xl mx-auto">
-          {renderPage()}
+          {children}
         </div>
       </main>
     </div>
   );
 }
 
+function AppRoutes() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      {/* Public route */}
+      <Route
+        path="/auth"
+        element={user ? <Navigate to="/dashboard" replace /> : <AuthPage />}
+      />
+
+      {/* Protected routes */}
+      <Route path="/dashboard" element={
+        <ProtectedRoute pageKey="dashboard">
+          <AppLayout><DashboardPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/projects" element={
+        <ProtectedRoute pageKey="projects">
+          <AppLayout><ProjectsPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/report" element={
+        <ProtectedRoute pageKey="report">
+          <AppLayout><ReportIssuePage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      <Route path="/issues" element={
+        <ProtectedRoute pageKey="issues">
+          <AppLayout><IssuesPage /></AppLayout>
+        </ProtectedRoute>
+      } />
+
+      {/* Catch-all: redirect to dashboard if logged in, else auth */}
+      <Route
+        path="*"
+        element={<Navigate to={user ? '/dashboard' : '/auth'} replace />}
+      />
+    </Routes>
+  );
+}
+
 function App() {
   return (
-    <AuthProvider>
-      <AppInner />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

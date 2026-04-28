@@ -1,95 +1,41 @@
 // pages/IssuesPage.js
-// Role-aware issues list — all 3 roles use this page with different capabilities
-// Phase 1 refactor: IssueCard extracted to components/IssueCard.js
-// TODO (refactor): split into ManagerIssues, TesterIssues, DeveloperIssues components
-// TODO (refactor): extract AssignModal and StatusUpdateModal
-// TODO (refactor): add pagination / infinite scroll for large datasets
-// TODO (refactor): add filtering and search
+// Phase 2 refactor:
+//   - raw fetch() replaced with useIssues() custom hook + api/users.js
+//   - navigation uses useNavigate() from react-router-dom
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import {
-  StatusBadge, Button, Select, Modal,
-  Alert, EmptyState, Spinner
-} from '../components/UI';
+import { StatusBadge, Button, Select, Modal, Alert, EmptyState, Spinner } from '../components/UI';
 import IssueCard from '../components/IssueCard';
-
-const API = process.env.REACT_APP_API_URL || '';
+import { useIssues } from '../hooks/useIssues';
+import { getDevelopers } from '../api/users';
 
 function IssuesPage() {
-  const { user, token } = useAuth();
-  const [issues, setIssues] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const { user } = useAuth();
+  const { issues, loading, error, assignIssue, updateStatus } = useIssues();
 
-  // Manager-specific: list of developers for assignment
-  const [developers, setDevelopers] = useState([]);
-
-  // Modal state
+  const [developers,    setDevelopers]    = useState([]);
   const [selectedIssue, setSelectedIssue] = useState(null);
-  const [assignModal, setAssignModal] = useState(false);
-  const [statusModal, setStatusModal] = useState(false);
-
-  // Form state for modals
-  const [assignTo, setAssignTo] = useState('');
-  const [newStatus, setNewStatus] = useState('');
+  const [assignModal,   setAssignModal]   = useState(false);
+  const [statusModal,   setStatusModal]   = useState(false);
+  const [assignTo,      setAssignTo]      = useState('');
+  const [newStatus,     setNewStatus]     = useState('');
   const [actionLoading, setActionLoading] = useState(false);
-  const [actionError, setActionError] = useState('');
+  const [actionError,   setActionError]   = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
-
-  // Filter state (lightweight, no URL sync — TODO for refactor)
-  const [statusFilter, setStatusFilter] = useState('all');
-
-  const fetchIssues = useCallback(async () => {
-    try {
-      const res = await fetch(`${API}/api/issues`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-      setIssues(data.issues);
-    } catch (err) {
-      setError('Failed to load issues');
-    } finally {
-      setLoading(false);
-    }
-  }, [token]);
-
-  const fetchDevelopers = useCallback(async () => {
-    if (user?.role !== 'manager') return;
-    try {
-      const res = await fetch(`${API}/api/users/developers`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      setDevelopers(data.developers || []);
-    } catch (err) {
-      // non-critical, fail silently
-    }
-  }, [token, user?.role]);
+  const [statusFilter,  setStatusFilter]  = useState('all');
 
   useEffect(() => {
-    fetchIssues();
-    fetchDevelopers();
-  }, [fetchIssues, fetchDevelopers]);
+    if (user?.role === 'manager') {
+      getDevelopers().then(setDevelopers).catch(() => {});
+    }
+  }, [user?.role]);
 
-  // Assign issue handler (manager)
   const handleAssign = async () => {
     setActionError('');
     setActionLoading(true);
     try {
-      const res = await fetch(`${API}/api/issues/${selectedIssue._id}/assign`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ assignedTo: assignTo || null }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-
-      setIssues(prev => prev.map(i => i._id === data.issue._id ? data.issue : i));
+      await assignIssue(selectedIssue._id, assignTo || null);
       setActionSuccess('Issue assigned!');
       setTimeout(() => { setAssignModal(false); setActionSuccess(''); setSelectedIssue(null); }, 1000);
     } catch (err) {
@@ -99,23 +45,11 @@ function IssuesPage() {
     }
   };
 
-  // Update status handler (developer)
   const handleStatusUpdate = async () => {
     setActionError('');
     setActionLoading(true);
     try {
-      const res = await fetch(`${API}/api/issues/${selectedIssue._id}/status`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
-
-      setIssues(prev => prev.map(i => i._id === data.issue._id ? data.issue : i));
+      await updateStatus(selectedIssue._id, newStatus);
       setActionSuccess('Status updated!');
       setTimeout(() => { setStatusModal(false); setActionSuccess(''); setSelectedIssue(null); }, 1000);
     } catch (err) {
@@ -128,49 +62,32 @@ function IssuesPage() {
   const openAssignModal = (issue) => {
     setSelectedIssue(issue);
     setAssignTo(issue.assignedTo?._id || '');
-    setActionError('');
-    setActionSuccess('');
+    setActionError(''); setActionSuccess('');
     setAssignModal(true);
   };
 
   const openStatusModal = (issue) => {
     setSelectedIssue(issue);
     setNewStatus(issue.status);
-    setActionError('');
-    setActionSuccess('');
+    setActionError(''); setActionSuccess('');
     setStatusModal(true);
   };
 
-  // Client-side filter
-  const filteredIssues = issues.filter(issue => {
-    if (statusFilter === 'all') return true;
-    return issue.status === statusFilter;
-  });
+  const filteredIssues = issues.filter(i => statusFilter === 'all' || i.status === statusFilter);
 
-  // Page title per role
-  const pageTitle = {
-    manager: 'All Issues',
-    tester: 'My Bug Reports',
-    developer: 'Assigned to Me',
-  }[user?.role] || 'Issues';
+  const pageTitle = { manager: 'All Issues', tester: 'My Bug Reports', developer: 'Assigned to Me' }[user?.role] || 'Issues';
 
   if (loading) return <div className="flex justify-center pt-20"><Spinner size="lg" /></div>;
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>
           <p className="text-slate-500 text-sm mt-1">{filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}</p>
         </div>
-
-        {/* Filter */}
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
-        >
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400">
           <option value="all">All Status</option>
           <option value="open">Open</option>
           <option value="in_progress">In Progress</option>
@@ -188,59 +105,39 @@ function IssuesPage() {
       ) : (
         <div className="space-y-3">
           {filteredIssues.map(issue => (
-            <IssueCard
-              key={issue._id}
-              issue={issue}
-              userRole={user?.role}
+            <IssueCard key={issue._id} issue={issue} userRole={user?.role}
               onAssign={() => openAssignModal(issue)}
-              onUpdateStatus={() => openStatusModal(issue)}
-            />
+              onUpdateStatus={() => openStatusModal(issue)} />
           ))}
         </div>
       )}
 
-      {/* Assign Modal (manager) */}
-      <Modal
-        open={assignModal}
-        onClose={() => { setAssignModal(false); setActionError(''); }}
-        title="Assign Issue"
-      >
+      {/* Assign Modal */}
+      <Modal open={assignModal} onClose={() => { setAssignModal(false); setActionError(''); }} title="Assign Issue">
         {selectedIssue && (
           <div className="space-y-4">
             <div className="p-3 bg-slate-50 rounded-lg">
               <div className="text-sm font-medium text-slate-700">{selectedIssue.title}</div>
               <div className="text-xs text-slate-500 mt-0.5">{selectedIssue.project?.name}</div>
             </div>
-            <Select
-              label="Assign to Developer"
-              value={assignTo}
-              onChange={e => setAssignTo(e.target.value)}
-            >
+            <Select label="Assign to Developer" value={assignTo} onChange={e => setAssignTo(e.target.value)}>
               <option value="">Unassigned</option>
-              {developers.map(dev => (
-                <option key={dev._id} value={dev._id}>{dev.name}</option>
-              ))}
+              {developers.map(dev => <option key={dev._id} value={dev._id}>{dev.name}</option>)}
             </Select>
-            {actionError && <Alert message={actionError} type="error" />}
+            {actionError   && <Alert message={actionError}   type="error"   />}
             {actionSuccess && <Alert message={actionSuccess} type="success" />}
             <div className="flex gap-2">
               <Button onClick={handleAssign} disabled={actionLoading} className="flex-1">
                 {actionLoading ? 'Saving...' : 'Assign'}
               </Button>
-              <Button variant="secondary" onClick={() => setAssignModal(false)} className="flex-1">
-                Cancel
-              </Button>
+              <Button variant="secondary" onClick={() => setAssignModal(false)} className="flex-1">Cancel</Button>
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Status Modal (developer) */}
-      <Modal
-        open={statusModal}
-        onClose={() => { setStatusModal(false); setActionError(''); }}
-        title="Update Status"
-      >
+      {/* Status Modal */}
+      <Modal open={statusModal} onClose={() => { setStatusModal(false); setActionError(''); }} title="Update Status">
         {selectedIssue && (
           <div className="space-y-4">
             <div className="p-3 bg-slate-50 rounded-lg">
@@ -251,24 +148,19 @@ function IssuesPage() {
                 <StatusBadge status={newStatus} />
               </div>
             </div>
-            <Select
-              label="New Status"
-              value={newStatus}
-              onChange={e => setNewStatus(e.target.value)}
-            >
+            <Select label="New Status" value={newStatus} onChange={e => setNewStatus(e.target.value)}>
               <option value="open">Open</option>
               <option value="in_progress">In Progress</option>
               <option value="resolved">Resolved</option>
             </Select>
-            {actionError && <Alert message={actionError} type="error" />}
+            {actionError   && <Alert message={actionError}   type="error"   />}
             {actionSuccess && <Alert message={actionSuccess} type="success" />}
             <div className="flex gap-2">
-              <Button onClick={handleStatusUpdate} disabled={actionLoading || newStatus === selectedIssue.status} className="flex-1">
+              <Button onClick={handleStatusUpdate}
+                disabled={actionLoading || newStatus === selectedIssue.status} className="flex-1">
                 {actionLoading ? 'Saving...' : 'Update Status'}
               </Button>
-              <Button variant="secondary" onClick={() => setStatusModal(false)} className="flex-1">
-                Cancel
-              </Button>
+              <Button variant="secondary" onClick={() => setStatusModal(false)} className="flex-1">Cancel</Button>
             </div>
           </div>
         )}
