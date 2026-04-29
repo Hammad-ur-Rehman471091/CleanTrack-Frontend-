@@ -1,20 +1,69 @@
 // pages/IssuesPage.js
-// Phase 2 refactor:
-//   - raw fetch() replaced with useIssues() custom hook + api/users.js
-//   - navigation uses useNavigate() from react-router-dom
+// Phase 2 refactor: useIssues hook + react-router
+// Phase 3 refactor:
+//   - IssueListSkeleton replaces spinner
+//   - search input (debounced) wired to useIssues
+//   - status filter moved server-side via search params
+//   - Pagination controls (prev/next + page indicator)
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { StatusBadge, Button, Select, Modal, Alert, EmptyState, Spinner } from '../components/UI';
-import IssueCard from '../components/IssueCard';
+import {
+  StatusBadge, Button, Select, Modal,
+  Alert, EmptyState, IssueListSkeleton,
+} from '../components/UI';
+import IssueCard   from '../components/IssueCard';
 import { useIssues } from '../hooks/useIssues';
 import { getDevelopers } from '../api/users';
 
+const PAGE_SIZE = 10;
+
 function IssuesPage() {
   const { user } = useAuth();
-  const { issues, loading, error, assignIssue, updateStatus } = useIssues();
 
-  const [developers,    setDevelopers]    = useState([]);
+  // ── search & filter state (drives useIssues params) ──
+  const [searchInput,  setSearchInput]  = useState('');
+  const [searchQuery,  setSearchQuery]  = useState('');  // debounced value sent to hook
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [currentPage,  setCurrentPage]  = useState(1);
+
+  // Debounce the search input — only fire after 400ms of inactivity
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearchQuery(searchInput);
+      setCurrentPage(1); // reset to page 1 on new search
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Reset page when status filter changes
+  const handleStatusChange = (e) => {
+    setStatusFilter(e.target.value);
+    setCurrentPage(1);
+  };
+
+  // Build the search string sent to the API
+  // Status filtering is client-side after fetch (server returns all statuses per role)
+  const { issues: allIssues, pagination, loading, error, assignIssue, updateStatus } = useIssues({
+    page:   currentPage,
+    limit:  PAGE_SIZE,
+    search: searchQuery,
+  });
+
+  // Client-side status filter on top of server-paginated results
+  const issues = statusFilter === 'all'
+    ? allIssues
+    : allIssues.filter(i => i.status === statusFilter);
+
+  // ── developer list for assign modal ──
+  const [developers, setDevelopers] = useState([]);
+  useEffect(() => {
+    if (user?.role === 'manager') {
+      getDevelopers().then(setDevelopers).catch(() => {});
+    }
+  }, [user?.role]);
+
+  // ── modal state ──
   const [selectedIssue, setSelectedIssue] = useState(null);
   const [assignModal,   setAssignModal]   = useState(false);
   const [statusModal,   setStatusModal]   = useState(false);
@@ -23,13 +72,6 @@ function IssuesPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError,   setActionError]   = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
-  const [statusFilter,  setStatusFilter]  = useState('all');
-
-  useEffect(() => {
-    if (user?.role === 'manager') {
-      getDevelopers().then(setDevelopers).catch(() => {});
-    }
-  }, [user?.role]);
 
   const handleAssign = async () => {
     setActionError('');
@@ -60,34 +102,60 @@ function IssuesPage() {
   };
 
   const openAssignModal = (issue) => {
-    setSelectedIssue(issue);
-    setAssignTo(issue.assignedTo?._id || '');
-    setActionError(''); setActionSuccess('');
-    setAssignModal(true);
+    setSelectedIssue(issue); setAssignTo(issue.assignedTo?._id || '');
+    setActionError(''); setActionSuccess(''); setAssignModal(true);
   };
-
   const openStatusModal = (issue) => {
-    setSelectedIssue(issue);
-    setNewStatus(issue.status);
-    setActionError(''); setActionSuccess('');
-    setStatusModal(true);
+    setSelectedIssue(issue); setNewStatus(issue.status);
+    setActionError(''); setActionSuccess(''); setStatusModal(true);
   };
-
-  const filteredIssues = issues.filter(i => statusFilter === 'all' || i.status === statusFilter);
 
   const pageTitle = { manager: 'All Issues', tester: 'My Bug Reports', developer: 'Assigned to Me' }[user?.role] || 'Issues';
 
-  if (loading) return <div className="flex justify-center pt-20"><Spinner size="lg" /></div>;
-
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>
-          <p className="text-slate-500 text-sm mt-1">{filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}</p>
+      {/* ── Header ── */}
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-slate-800">{pageTitle}</h1>
+        <p className="text-slate-500 text-sm mt-1">
+          {loading ? 'Loading...' : `${pagination.total} total issue${pagination.total !== 1 ? 's' : ''}`}
+        </p>
+      </div>
+
+      {/* ── Search + Filter bar ── */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        {/* Search input */}
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-slate-400">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </div>
+          <input
+            type="text"
+            placeholder="Search by title or description..."
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400"
+          />
+          {searchInput && (
+            <button
+              onClick={() => { setSearchInput(''); setSearchQuery(''); setCurrentPage(1); }}
+              className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          )}
         </div>
-        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400">
+
+        {/* Status filter */}
+        <select
+          value={statusFilter}
+          onChange={handleStatusChange}
+          className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-violet-400 min-w-[140px]"
+        >
           <option value="all">All Status</option>
           <option value="open">Open</option>
           <option value="in_progress">In Progress</option>
@@ -97,14 +165,17 @@ function IssuesPage() {
 
       {error && <Alert message={error} type="error" />}
 
-      {filteredIssues.length === 0 ? (
+      {/* ── Issue list ── */}
+      {loading ? (
+        <IssueListSkeleton count={PAGE_SIZE} />
+      ) : issues.length === 0 ? (
         <EmptyState
-          title={issues.length === 0 ? 'No issues found' : 'No issues match the filter'}
-          subtitle={issues.length === 0 ? 'Nothing to show here yet' : 'Try changing the status filter'}
+          title={pagination.total === 0 ? 'No issues found' : 'No issues match your filters'}
+          subtitle={pagination.total === 0 ? 'Nothing to show here yet' : 'Try adjusting your search or filter'}
         />
       ) : (
         <div className="space-y-3">
-          {filteredIssues.map(issue => (
+          {issues.map(issue => (
             <IssueCard key={issue._id} issue={issue} userRole={user?.role}
               onAssign={() => openAssignModal(issue)}
               onUpdateStatus={() => openStatusModal(issue)} />
@@ -112,7 +183,51 @@ function IssuesPage() {
         </div>
       )}
 
-      {/* Assign Modal */}
+      {/* ── Pagination controls ── */}
+      {!loading && pagination.totalPages > 1 && (
+        <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-200">
+          <p className="text-sm text-slate-500">
+            Page {pagination.page} of {pagination.totalPages}
+            <span className="text-slate-400 ml-1">({pagination.total} total)</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              disabled={pagination.page <= 1}
+              onClick={() => setCurrentPage(p => p - 1)}
+              className="text-xs px-3 py-1.5"
+            >
+              Previous
+            </Button>
+
+            {/* Page number buttons — show up to 5 around current page */}
+            {getPageNumbers(pagination.page, pagination.totalPages).map(n => (
+              <button
+                key={n}
+                onClick={() => setCurrentPage(n)}
+                className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors
+                  ${n === pagination.page
+                    ? 'bg-violet-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+              >
+                {n}
+              </button>
+            ))}
+
+            <Button
+              variant="secondary"
+              disabled={pagination.page >= pagination.totalPages}
+              onClick={() => setCurrentPage(p => p + 1)}
+              className="text-xs px-3 py-1.5"
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Assign Modal ── */}
       <Modal open={assignModal} onClose={() => { setAssignModal(false); setActionError(''); }} title="Assign Issue">
         {selectedIssue && (
           <div className="space-y-4">
@@ -136,7 +251,7 @@ function IssuesPage() {
         )}
       </Modal>
 
-      {/* Status Modal */}
+      {/* ── Status Modal ── */}
       <Modal open={statusModal} onClose={() => { setStatusModal(false); setActionError(''); }} title="Update Status">
         {selectedIssue && (
           <div className="space-y-4">
@@ -167,6 +282,16 @@ function IssuesPage() {
       </Modal>
     </div>
   );
+}
+
+// Helper: generate up to 5 page numbers centred around currentPage
+function getPageNumbers(current, total) {
+  const delta  = 2;
+  const left   = Math.max(1, current - delta);
+  const right  = Math.min(total, current + delta);
+  const pages  = [];
+  for (let i = left; i <= right; i++) pages.push(i);
+  return pages;
 }
 
 export default IssuesPage;

@@ -1,10 +1,9 @@
 // pages/ProjectsPage.js
-// Phase 2 refactor:
-//   - raw fetch() replaced with useProjects() custom hook
-//   - all project API calls go through api/projects.js
+// Phase 2 refactor: useProjects hook
+// Phase 3 refactor: ProjectGridSkeleton replaces blank spinner
 
 import React, { useState } from 'react';
-import { Card, Button, Input, Textarea, Modal, Alert, EmptyState, Spinner } from '../components/UI';
+import { Card, Button, Input, Textarea, Modal, Alert, EmptyState, ProjectGridSkeleton } from '../components/UI';
 import { useProjects } from '../hooks/useProjects';
 
 function ProjectsPage() {
@@ -34,7 +33,7 @@ function ProjectsPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center pt-20"><Spinner size="lg" /></div>;
+  if (loading) return <ProjectGridSkeleton count={6} />;
 
   return (
     <div>

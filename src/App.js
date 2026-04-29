@@ -1,8 +1,6 @@
 // App.js
-// Phase 2 refactor:
-//   - state-based routing replaced with react-router-dom v6
-//   - ProtectedRoute component enforces auth + role access
-//   - role-page rules sourced from config/permissions.js
+// Phase 2 refactor: react-router-dom v6, ProtectedRoute, permissions config
+// Phase 3 refactor: ErrorBoundary wraps every protected page
 
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
@@ -15,6 +13,7 @@ import ProjectsPage from './pages/ProjectsPage';
 import ReportIssuePage from './pages/ReportIssuePage';
 import IssuesPage from './pages/IssuesPage';
 import { Spinner } from './components/UI';
+import ErrorBoundary from './components/ErrorBoundary';
 
 /**
  * ProtectedRoute — renders children only when:
@@ -78,25 +77,25 @@ function AppRoutes() {
       {/* Protected routes */}
       <Route path="/dashboard" element={
         <ProtectedRoute pageKey="dashboard">
-          <AppLayout><DashboardPage /></AppLayout>
+          <AppLayout><ErrorBoundary><DashboardPage /></ErrorBoundary></AppLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/projects" element={
         <ProtectedRoute pageKey="projects">
-          <AppLayout><ProjectsPage /></AppLayout>
+          <AppLayout><ErrorBoundary><ProjectsPage /></ErrorBoundary></AppLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/report" element={
         <ProtectedRoute pageKey="report">
-          <AppLayout><ReportIssuePage /></AppLayout>
+          <AppLayout><ErrorBoundary><ReportIssuePage /></ErrorBoundary></AppLayout>
         </ProtectedRoute>
       } />
 
       <Route path="/issues" element={
         <ProtectedRoute pageKey="issues">
-          <AppLayout><IssuesPage /></AppLayout>
+          <AppLayout><ErrorBoundary><IssuesPage /></ErrorBoundary></AppLayout>
         </ProtectedRoute>
       } />
 

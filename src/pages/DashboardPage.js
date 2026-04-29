@@ -1,12 +1,11 @@
 // pages/DashboardPage.js
-// Phase 2 refactor:
-//   - raw fetch() replaced with useStats() custom hook
-//   - navigation uses useNavigate() from react-router-dom
+// Phase 2 refactor: useStats hook + react-router
+// Phase 3 refactor: DashboardSkeleton replaces blank spinner
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { StatCard, Spinner, Alert } from '../components/UI';
+import { StatCard, Alert, DashboardSkeleton } from '../components/UI';
 import { useStats } from '../hooks/useStats';
 
 function DashboardPage() {
@@ -14,13 +13,7 @@ function DashboardPage() {
   const navigate              = useNavigate();
   const { stats, loading, error } = useStats();
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
+  if (loading) return <DashboardSkeleton count={user?.role === 'manager' ? 6 : 4} />;
 
   return (
     <div>

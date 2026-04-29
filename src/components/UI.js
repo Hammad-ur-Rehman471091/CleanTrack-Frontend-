@@ -1,10 +1,17 @@
 // components/UI.js
-// Phase 1 refactor: this file is now a barrel that re-exports from components/ui/
-// All existing imports of '../components/UI' continue to work unchanged.
-// Individual files can now also import directly from '../components/ui/Button' etc.
+// Phase 1 refactor: barrel re-export from components/ui/
+// Phase 3 refactor: added Skeleton exports
 
-export { StatusBadge, RoleBadge }            from './ui/Badge';
-export { Card, StatCard }                    from './ui/Card';
-export { Button }                            from './ui/Button';
-export { Input, Textarea, Select }           from './ui/FormFields';
-export { Alert, Spinner, EmptyState, Modal } from './ui/Feedback';
+export { StatusBadge, RoleBadge }                                        from './ui/Badge';
+export { Card, StatCard }                                                 from './ui/Card';
+export { Button }                                                         from './ui/Button';
+export { Input, Textarea, Select }                                        from './ui/FormFields';
+export { Alert, Spinner, EmptyState, Modal }                             from './ui/Feedback';
+export {
+  IssueCardSkeleton,
+  IssueListSkeleton,
+  ProjectCardSkeleton,
+  ProjectGridSkeleton,
+  StatCardSkeleton,
+  DashboardSkeleton,
+} from './ui/Skeleton';
