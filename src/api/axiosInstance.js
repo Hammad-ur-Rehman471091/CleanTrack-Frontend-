@@ -6,17 +6,8 @@
 
 import axios from 'axios';
 
-const baseURL = process.env.REACT_APP_API_URL?.replace(/\/$/, '') || '';
-
-if (!baseURL && typeof window !== 'undefined') {
-  console.warn(
-    'REACT_APP_API_URL is not set. API requests will be sent to the current origin.\n' +
-    'If the backend is deployed separately, set REACT_APP_API_URL to your backend URL.'
-  );
-}
-
 const api = axios.create({
-  baseURL,
+  baseURL: process.env.REACT_APP_API_URL || '',
   headers: { 'Content-Type': 'application/json' },
 });
 
