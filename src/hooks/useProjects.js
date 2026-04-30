@@ -1,32 +1,27 @@
-// hooks/useProjects.js
-// Phase 2 refactor: extracted from ProjectsPage
-// Exposes { projects, loading, error, createProject }
-
 import { useState, useEffect, useCallback } from 'react';
 import * as projectsApi from '../api/projects';
 
-export function useProjects() {
+export function useProjects(teamId) {
   const [projects, setProjects] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState('');
 
   const fetchProjects = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try {
-      const data = await projectsApi.getProjects();
+      const data = await projectsApi.getProjects(teamId);
       setProjects(data);
     } catch (err) {
       setError(err.message || 'Failed to load projects');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [teamId]);
 
   useEffect(() => { fetchProjects(); }, [fetchProjects]);
 
-  const createProject = async (name, description) => {
-    const newProject = await projectsApi.createProject(name, description);
+  const createProject = async (name, description, teamId) => {
+    const newProject = await projectsApi.createProject(name, description, teamId);
     setProjects(prev => [newProject, ...prev]);
     return newProject;
   };
